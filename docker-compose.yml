@@ -1,0 +1,65 @@
+services:
+  api:
+    build: .
+    container_name: rag_api
+    environment:
+      # Provider-agnostic model configuration (new)
+      PROVIDER_EMBED: ${PROVIDER_EMBED:-ollama}           # ollama | openai | (future: google | anthropic | databricks)
+      PROVIDER_CHAT: ${PROVIDER_CHAT:-ollama}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      CHAT_MODEL: ${CHAT_MODEL:-llama2}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+
+      # Cloud provider credentials (only required if selected)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      DATABRICKS_HOST: ${DATABRICKS_HOST:-}
+      DATABRICKS_TOKEN: ${DATABRICKS_TOKEN:-}
+
+      # Vector / storage
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ""
+      QDRANT_COLLECTION: documents
+      STORAGE_ROOT: /data/storage
+
+      # Postgres
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DB: ragdb
+      PG_USER: raguser
+      PG_PASSWORD: ragpass
+    depends_on:
+      - qdrant
+      - postgres
+    ports:
+      - "8000:8000"
+    volumes:
+      - api_storage:/data/storage
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: rag_qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  postgres:
+    image: postgres:15
+    container_name: rag_postgres
+    environment:
+      POSTGRES_DB: ragdb
+      POSTGRES_USER: raguser
+      POSTGRES_PASSWORD: ragpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  qdrant_storage:
+  pg_data:
+  api_storage:

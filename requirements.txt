@@ -1,0 +1,14 @@
+pypdf
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-text-splitters==0.3.6
+chromadb
+fastapi
+uvicorn
+qdrant-client
+psycopg[binary]
+httpx
+openai
+python-dotenv
+pytest
+python-multipart
