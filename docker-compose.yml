@@ -55,7 +55,7 @@ services:
       POSTGRES_USER: raguser
       POSTGRES_PASSWORD: ragpass
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
 

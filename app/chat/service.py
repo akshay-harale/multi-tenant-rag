@@ -40,23 +40,30 @@ def append_messages(tenant_id: str, session_id: str, new_messages: List[Dict[str
         )
 
 SYSTEM_TEMPLATE = (
-    "You are a retrieval augmented assistant. Use ONLY the provided context chunks.\n"
-    "If the answer is not in the context, say you do not know.\n"
-    "Cite sources by filename and chunk id if possible.\n\n"
+    "You are a retrieval-augmented assistant. You MUST use ONLY the provided context chunks to answer.\n"
+    "If the answer is not fully contained in the context, respond exactly: \"I don't know based on the provided documents.\"\n"
+    "Do NOT attempt to answer from outside knowledge. Cite sources by filename and chunk id when possible.\n\n"
     "Context Chunks:\n{context}\n\n"
-    "Answer the user query clearly and concisely."
+    "Answer the user query clearly and concisely. If you must refuse, use the exact phrase above."
 )
 
 def build_context_chunks(results: List[Any], max_chars: int = 8000) -> Tuple[str, List[str], List[str]]:
     """
     results: list of SearchResult (id, text, score, metadata)
     Returns: (context_string, citation_ids, source_list)
+
+    Notes:
+    - Respect settings.max_context_docs by trimming the candidate results before assembling context.
+    - This reduces prompt size and keeps highest-confidence chunks.
     """
+    # Trim to configured max documents (results are expected ordered by score)
+    trimmed = results[:settings.max_context_docs] if settings.max_context_docs and len(results) > settings.max_context_docs else results
+
     context_parts: List[str] = []
     citations: List[str] = []
     sources: List[str] = []
     total_len = 0
-    for r in results:
+    for r in trimmed:
         source = r.metadata.get("source") or "unknown"
         cid = f"{source}#chunk{r.metadata.get('chunk_index')}"
         snippet = r.text[:1200]
@@ -98,14 +105,72 @@ def rag_chat(
 
     # Retrieval
     query_emb = embeddings.embed_query(user_message)
+    # Use a wider recall for search then trim context; apply configured score threshold
+    search_top_k = settings.max_search_k if settings.max_search_k and settings.max_search_k > top_k else top_k
     results = vector_store.search(
         tenant_id=tenant_id,
         embedding=query_emb,
-        top_k=top_k,
-        score_threshold=None
+        top_k=search_top_k,
+        score_threshold=settings.min_score_threshold
     )
 
     context_str, citations, sources = build_context_chunks(results)
+
+    # Retrieval safety checks
+    if not results:
+        answer = "No relevant context found for this query."
+        # Persist user + assistant minimal
+        history_messages.append({"role": "user", "content": user_message})
+        history_messages.append({"role": "assistant", "content": answer})
+        append_messages(tenant_id, session_id, [{"role": "user", "content": user_message},
+                                                {"role": "assistant", "content": answer}])
+        return {
+            "session_id": session_id,
+            "answer": answer,
+            "citations": [],
+            "used_chunks": 0,
+            "sources": []
+        }
+
+    # If a min_score_threshold is configured, ensure top hit meets it
+    top_score = results[0].score if results else None
+    if settings.min_score_threshold is not None and (top_score is None or top_score < settings.min_score_threshold):
+        answer = "No relevant context found for this query."
+        history_messages.append({"role": "user", "content": user_message})
+        history_messages.append({"role": "assistant", "content": answer})
+        append_messages(tenant_id, session_id, [{"role": "user", "content": user_message},
+                                                {"role": "assistant", "content": answer}])
+        return {
+            "session_id": session_id,
+            "answer": answer,
+            "citations": [],
+            "used_chunks": 0,
+            "sources": []
+        }
+
+    # For short queries, ensure the retrieved chunks actually contain the query keyword to avoid noisy hits
+    if settings.require_keyword_in_short_queries:
+        tokens = [t.lower() for t in user_message.split() if t.strip()]
+        if len(tokens) <= settings.short_query_token_threshold:
+            found = False
+            for r in results:
+                text_lower = (r.text or "").lower()
+                if any(tok in text_lower for tok in tokens):
+                    found = True
+                    break
+            if not found:
+                answer = "No relevant context found for this query."
+                history_messages.append({"role": "user", "content": user_message})
+                history_messages.append({"role": "assistant", "content": answer})
+                append_messages(tenant_id, session_id, [{"role": "user", "content": user_message},
+                                                        {"role": "assistant", "content": answer}])
+                return {
+                    "session_id": session_id,
+                    "answer": answer,
+                    "citations": [],
+                    "used_chunks": 0,
+                    "sources": []
+                }
 
     if not results:
         answer = "No relevant context found for this query."

@@ -65,6 +65,9 @@ def _chunk_page_texts(pages: List[Tuple[int, str]]) -> List[Tuple[int, int, str]
             norm = _normalize_text(chunk)
             if not norm:
                 continue
+            # Skip very short chunks which are often noise/headers/footers
+            if hasattr(settings, "min_chunk_chars") and settings.min_chunk_chars and len(norm) < settings.min_chunk_chars:
+                continue
             out.append((page_num, idx, norm))
     return out
 

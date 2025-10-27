@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     max_search_k: int = 50       # initial vector recall set
     top_k: int = 8               # final results returned
     min_score_threshold: float | None = None  # set (e.g., 0.5) to filter weak hits
+    min_chunk_chars: int = 50    # skip chunks shorter than this during ingestion
+
+    # Short query handling / retrieval safety
+    short_query_token_threshold: int = 3  # queries with <= this tokens are considered 'short'
+    require_keyword_in_short_queries: bool = True  # require keyword presence in retrieved text for short queries
 
     # Chat / RAG
     enable_streaming: bool = False
