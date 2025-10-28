@@ -1,4 +1,4 @@
-# RAG Tutorial v2
+# Multi tenant RAG.
 
 Small RAG (Retrieval-Augmented Generation) reference app demonstrating:
 - document ingestion (PDFs)
