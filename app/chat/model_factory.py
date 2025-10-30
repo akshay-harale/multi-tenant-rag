@@ -29,10 +29,11 @@ _singletons: dict[str, ChatClientLike] = {}
 
 
 class OllamaChatClient:
-    def __init__(self, base_url: str, model: str, timeout: float = 120):
+    def __init__(self, base_url: str, model: str, timeout: float = 120, temperature: float | None = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
+        self.temperature = temperature
 
     def complete(self, messages: List[Dict[str, str]]) -> str:
         payload = {
@@ -40,6 +41,8 @@ class OllamaChatClient:
             "messages": messages,
             "stream": False
         }
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
         url = f"{self.base_url}/api/chat"
         with httpx.Client(timeout=self.timeout) as client:
             r = client.post(url, json=payload)
@@ -54,20 +57,20 @@ class OllamaChatClient:
 
 
 class OpenAIChatClient:
-    def __init__(self, api_key: str, model: str, timeout: float = 120):
+    def __init__(self, api_key: str, model: str, timeout: float = 120, temperature: float | None = None):
         if OpenAI is None:
             raise RuntimeError("openai package not installed (pip install openai)")
         self.client = OpenAI(api_key=api_key)
         self.model = model
         self.timeout = timeout
+        self.temperature = temperature
 
     def complete(self, messages: List[Dict[str, str]]) -> str:
         # Convert to OpenAI chat format; already role/content
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=0
-        )
+        create_kwargs = {"model": self.model, "messages": messages}
+        if self.temperature is not None:
+            create_kwargs["temperature"] = self.temperature
+        resp = self.client.chat.completions.create(**create_kwargs)
         try:
             return resp.choices[0].message.content.strip()
         except Exception:
@@ -79,12 +82,12 @@ def _build_client(settings) -> ChatClientLike:
     model = settings.chat_model
 
     if prov == "ollama":
-        return OllamaChatClient(base_url=settings.ollama_base_url, model=model)
+        return OllamaChatClient(base_url=settings.ollama_base_url, model=model, temperature=settings.chat_temperature)
 
     if prov == "openai":
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY not set but provider_chat=openai")
-        return OpenAIChatClient(api_key=settings.openai_api_key, model=model)
+        return OpenAIChatClient(api_key=settings.openai_api_key, model=model, temperature=settings.chat_temperature)
 
     raise ValueError(f"Unsupported chat provider '{prov}'")
 

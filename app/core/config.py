@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     provider_chat: str = Field(default="ollama")    # same enum
     embed_model: str = Field(default="nomic-embed-text")  # embedding model name
     chat_model: str = Field(default="llama2")             # chat model name
+    chat_temperature: float | None = Field(default=None)  # optional temperature override for chat provider (env: CHAT_TEMPERATURE)
 
     # Provider base URLs (only used if provider requires it)
     ollama_base_url: str = Field(default="http://localhost:11434")

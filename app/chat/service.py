@@ -186,6 +186,7 @@ def rag_chat(
             "used_chunks": 0,
             "sources": []
         }
+    print("Context:", context_str)
 
     system_prompt = SYSTEM_TEMPLATE.format(context=context_str)
     # Build message list for LLM
@@ -207,6 +208,17 @@ def rag_chat(
         answer = chat_complete(llm_messages)
     except Exception as e:
         answer = f"LLM backend error: {e}"
+
+    # Normalise unknown/empty model replies to the exact phrase required by the system prompt.
+    # This ensures callers get the deterministic response when the model cannot answer
+    # from the provided documents.
+    canonical_unknown = "I don't know based on the provided documents."
+    if isinstance(answer, str):
+        ans_str = answer.strip()
+        low = ans_str.lower()
+        # If answer is empty or contains a variant of "i don't know", replace with canonical phrase.
+        if not ans_str or "i don't know" in low:
+            answer = canonical_unknown
 
     # Persist
     history_messages.append({"role": "user", "content": user_message})

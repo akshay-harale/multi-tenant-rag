@@ -81,13 +81,34 @@ class QdrantVectorStore(VectorStore):
 
     def ensure_collections(self) -> None:
         """
-        No-op until first upsert (because we need vector size).
-        Could be extended to accept a configured embedding dimension to eagerly create.
+        Ensure we know whether the collection exists on the Qdrant server.
+
+        Behaviour:
+          - If the collection already exists, mark the store as ensured so
+            read-only operations (search/scroll/count) can run after a process
+            restart without requiring a new upsert.
+          - If the collection does not exist we defer creation until the first
+            upsert because we need the embedding dimension to create the
+            collection.
         """
         if self._ensured:
             return
-        # Defer creation: without size we cannot create the collection.
-        logger.debug("Deferring Qdrant collection creation until first embedding observed.")
+
+        try:
+            exists = self.client.collection_exists(self._state.name)
+        except Exception as e:
+            # If we cannot reach Qdrant, do not raise here; callers will handle as empty.
+            logger.warning("Failed checking collection existence: %s", e)
+            return
+
+        if exists:
+            logger.info("Qdrant collection '%s' exists; enabling read operations", self._state.name)
+            # We intentionally do not attempt to derive vector_size here (qdrant client
+            # surface differs between versions). The important part is allowing searches
+            # to proceed after a restart. vector_size will be set during the first upsert.
+            self._ensured = True
+        else:
+            logger.debug("Qdrant collection '%s' does not exist; will create on first upsert", self._state.name)
 
     # -------------------------- Public API --------------------------
 
@@ -152,11 +173,20 @@ class QdrantVectorStore(VectorStore):
         top_k: int,
         score_threshold: Optional[float] = None,
     ) -> List[SearchResult]:
+        # Ensure we know whether the collection exists (this allows searches after
+        # process restarts when collection was created previously).
+        if not self._ensured:
+            self.ensure_collections()
         if not self._ensured:
             # Nothing indexed yet
             return []
 
+        # Debug: log key search parameters to help diagnose missing-hit issues
         try:
+            logger.debug(
+                "Qdrant search called: collection=%s, query_vector_len=%d, top_k=%d, score_threshold=%s, tenant_id=%s",
+                self._state.name, len(embedding) if embedding is not None else 0, top_k, score_threshold, tenant_id
+            )
             res = self.client.search(
                 collection_name=self._state.name,
                 query_vector=list(embedding),
@@ -174,6 +204,7 @@ class QdrantVectorStore(VectorStore):
                 )
             )
         except Exception as e:
+            logger.error("Qdrant search error: %s", e)
             raise RuntimeError(f"Qdrant search failed: {e}") from e
 
         out: List[SearchResult] = []
