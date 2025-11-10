@@ -134,43 +134,43 @@ def rag_chat(
 
     # If a min_score_threshold is configured, ensure top hit meets it
     top_score = results[0].score if results else None
-    if settings.min_score_threshold is not None and (top_score is None or top_score < settings.min_score_threshold):
-        answer = "No relevant context found for this query."
-        history_messages.append({"role": "user", "content": user_message})
-        history_messages.append({"role": "assistant", "content": answer})
-        append_messages(tenant_id, session_id, [{"role": "user", "content": user_message},
-                                                {"role": "assistant", "content": answer}])
-        return {
-            "session_id": session_id,
-            "answer": answer,
-            "citations": [],
-            "used_chunks": 0,
-            "sources": []
-        }
+    # if settings.min_score_threshold is not None and (top_score is None or top_score < settings.min_score_threshold):
+    #     answer = "No relevant context found for this query."
+    #     history_messages.append({"role": "user", "content": user_message})
+    #     history_messages.append({"role": "assistant", "content": answer})
+    #     append_messages(tenant_id, session_id, [{"role": "user", "content": user_message},
+    #                                             {"role": "assistant", "content": answer}])
+    #     return {
+    #         "session_id": session_id,
+    #         "answer": answer,
+    #         "citations": [],
+    #         "used_chunks": 0,
+    #         "sources": []
+    #     }
 
     # For short queries, ensure the retrieved chunks actually contain the query keyword to avoid noisy hits
-    if settings.require_keyword_in_short_queries:
-        tokens = [t.lower() for t in user_message.split() if t.strip()]
-        if len(tokens) <= settings.short_query_token_threshold:
-            found = False
-            for r in results:
-                text_lower = (r.text or "").lower()
-                if any(tok in text_lower for tok in tokens):
-                    found = True
-                    break
-            if not found:
-                answer = "No relevant context found for this query."
-                history_messages.append({"role": "user", "content": user_message})
-                history_messages.append({"role": "assistant", "content": answer})
-                append_messages(tenant_id, session_id, [{"role": "user", "content": user_message},
-                                                        {"role": "assistant", "content": answer}])
-                return {
-                    "session_id": session_id,
-                    "answer": answer,
-                    "citations": [],
-                    "used_chunks": 0,
-                    "sources": []
-                }
+    # if settings.require_keyword_in_short_queries:
+    #     tokens = [t.lower() for t in user_message.split() if t.strip()]
+    #     if len(tokens) <= settings.short_query_token_threshold:
+    #         found = False
+    #         for r in results:
+    #             text_lower = (r.text or "").lower()
+    #             if any(tok in text_lower for tok in tokens):
+    #                 found = True
+    #                 break
+    #         if not found:
+    #             answer = "No relevant context found for this query."
+    #             history_messages.append({"role": "user", "content": user_message})
+    #             history_messages.append({"role": "assistant", "content": answer})
+    #             append_messages(tenant_id, session_id, [{"role": "user", "content": user_message},
+    #                                                     {"role": "assistant", "content": answer}])
+    #             return {
+    #                 "session_id": session_id,
+    #                 "answer": answer,
+    #                 "citations": [],
+    #                 "used_chunks": 0,
+    #                 "sources": []
+    #             }
 
     if not results:
         answer = "No relevant context found for this query."
@@ -186,7 +186,7 @@ def rag_chat(
             "used_chunks": 0,
             "sources": []
         }
-    print("Context:", context_str)
+    #print("Context:", context_str)
 
     system_prompt = SYSTEM_TEMPLATE.format(context=context_str)
     # Build message list for LLM
