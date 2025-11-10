@@ -193,6 +193,41 @@ pre.log {
   margin-top:4px;
 }
 
+/* Chat message containers for better spacing and readable blocks */
+.chat-box .msg-user,
+.chat-box .msg-assistant {
+  padding:8px;
+  margin-bottom:8px;
+  border-radius:6px;
+}
+
+/* Subtle backgrounds to separate roles */
+.chat-box .msg-user { background: rgba(64,120,200,0.06); }
+.chat-box .msg-assistant { background: rgba(60,120,80,0.04); }
+
+/* Code and pre styling inside messages */
+.chat-box pre {
+  background:#0b1220;
+  padding:10px;
+  border-radius:6px;
+  overflow:auto;
+  border:1px solid #23303b;
+  font-family: var(--mono);
+  font-size:.85rem;
+  line-height:1.25rem;
+}
+.chat-box code {
+  background:#071022;
+  padding:2px 6px;
+  border-radius:4px;
+  border:1px solid #23303b;
+  font-family: var(--mono);
+  font-size:.85rem;
+}
+
+/* Links inside rendered markdown */
+.chat-box a { color: var(--accent); text-decoration: underline; }
+
 .search-results {
   font-size:.72rem;
   line-height:1.1rem;
@@ -255,7 +290,7 @@ footer {
   <div class="panel" id="rightCol">
     <h2>Chat With Documents</h2>
     <div class="inline">
-      <input id="chatInput" type="text" placeholder="Ask something about your documents..." />
+      <textarea id="chatInput" rows="3" placeholder="Ask something about your documents... (Shift+Enter for newline)"></textarea>
       <button id="btnSend">Send</button>
     </div>
     <div class="inline">
@@ -296,8 +331,65 @@ function chatAppend(role, content, citations=[]) {
   const box = document.getElementById("chatBox");
   const div = document.createElement("div");
   div.className = role === "user" ? "msg-user" : "msg-assistant";
-  const safe = content.replace(/[<>&]/g, s => ({'<':'<','>':'>','&':'&'}[s]));
-  div.innerHTML = "<strong>"+role.toUpperCase()+":</strong> " + safe;
+
+  function escapeHtml(str){
+    return String(str)
+      .replace(/&/g,'&')
+      .replace(/</g,'<')
+      .replace(/>/g,'>')
+      .replace(/"/g,'"')
+      .replace(/'/g,'&#39;');
+  }
+
+  function renderMarkdown(text){
+    if(!text) return "";
+    // start with escaped text to avoid XSS
+    let s = escapeHtml(text);
+
+    // code blocks ```...```
+    s = s.replace(/```([\s\S]*?)```/g, (m, code) => {
+      return '<pre><code>' + escapeHtml(code) + '</code></pre>';
+    });
+
+    // inline code `...`
+    s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
+
+    // links [text](url)
+    s = s.replace(/\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+    // bold **text**
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // italic *text*
+    s = s.replace(/(^|[^*])\*([^*][^*]*?)\*([^*]|$)/g, (m, pre, txt, post) => {
+      return pre + '<em>' + txt + '</em>' + post;
+    });
+
+    // simple unordered lists: lines beginning with - or *
+    const lines = s.split('\n');
+    let out = '';
+    let inList = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const m = line.match(/^\s*[-*]\s+(.*)$/);
+      if (m) {
+        if (!inList) { out += '<ul>'; inList = true; }
+        out += '<li>' + m[1] + '</li>';
+      } else {
+        if (inList) { out += '</ul>'; inList = false; }
+        out += line.replace(/\n/g, '<br>');
+      }
+      if (i < lines.length - 1) out += '\n';
+    }
+    if (inList) out += '</ul>';
+
+    // paragraphs: split on double newlines
+    const parts = out.split(/\n{2,}/).map(p => '<p>' + p.replace(/\n/g, '<br>') + '</p>');
+    return parts.join('');
+  }
+
+  div.innerHTML = "<strong>"+role.toUpperCase()+":</strong> " + renderMarkdown(content);
+
   if (citations.length){
     const cite = document.createElement("span");
     cite.className = "citations";
@@ -481,6 +573,7 @@ document.getElementById("btnClearChat").onclick = clearChat;
 document.getElementById("btnNewSession").onclick = newSession;
 document.getElementById("chatInput").addEventListener("keydown", e=>{
   if(e.key === "Enter" && !e.shiftKey){
+    e.preventDefault();
     sendChat();
   }
 });

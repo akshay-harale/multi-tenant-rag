@@ -50,9 +50,9 @@ class OllamaChatClient:
             data = r.json()
         if isinstance(data, dict):
             if "message" in data and isinstance(data["message"], dict):
-                return data["message"].get("content", "").strip()
+                return data["message"].get("content", "")
             if "response" in data:
-                return str(data["response"]).strip()
+                return str(data["response"])
         return str(data)[:8000]
 
 
@@ -72,7 +72,7 @@ class OpenAIChatClient:
             create_kwargs["temperature"] = self.temperature
         resp = self.client.chat.completions.create(**create_kwargs)
         try:
-            return resp.choices[0].message.content.strip()
+            return resp.choices[0].message.content
         except Exception:
             return str(resp)[:8000]
 

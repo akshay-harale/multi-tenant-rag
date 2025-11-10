@@ -41,7 +41,6 @@ def append_messages(tenant_id: str, session_id: str, new_messages: List[Dict[str
 
 SYSTEM_TEMPLATE = (
     "You are a retrieval-augmented assistant. You MUST use ONLY the provided context chunks to answer.\n"
-    "If the answer is not fully contained in the context, respond exactly: \"I don't know based on the provided documents.\"\n"
     "Do NOT attempt to answer from outside knowledge. Cite sources by filename and chunk id when possible.\n\n"
     "Context Chunks:\n{context}\n\n"
     "Answer the user query clearly and concisely. If you must refuse, use the exact phrase above."
@@ -203,12 +202,14 @@ def rag_chat(
     # Current user turn
     llm_messages.append({"role": "user", "content": user_message})
 
+    print("LLM message", llm_messages)
     # Call model
     try:
         answer = chat_complete(llm_messages)
     except Exception as e:
         answer = f"LLM backend error: {e}"
 
+    print("LLM answer:", answer)
     # Normalise unknown/empty model replies to the exact phrase required by the system prompt.
     # This ensures callers get the deterministic response when the model cannot answer
     # from the provided documents.
