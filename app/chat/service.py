@@ -82,7 +82,8 @@ def rag_chat(
     user_message: str,
     session_id: str | None,
     top_k: int,
-    include_history: bool
+    include_history: bool,
+    source_ids: List[str] | None = None
 ) -> Dict[str, Any]:
     """
     Main RAG chat pipeline:
@@ -110,7 +111,8 @@ def rag_chat(
         tenant_id=tenant_id,
         embedding=query_emb,
         top_k=search_top_k,
-        score_threshold=settings.min_score_threshold
+        score_threshold=settings.min_score_threshold,
+        source_ids=source_ids
     )
 
     context_str, citations, sources = build_context_chunks(results)

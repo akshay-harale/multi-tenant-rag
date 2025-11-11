@@ -19,6 +19,27 @@ CREATE TABLE IF NOT EXISTS tenants (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS sources (
+    tenant_id TEXT NOT NULL,
+    source_id UUID NOT NULL,
+    source_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, source_id),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    UNIQUE (tenant_id, source_name)
+);
+
+CREATE TABLE IF NOT EXISTS documents (
+    tenant_id TEXT NOT NULL,
+    source_id UUID NOT NULL,
+    document_id UUID NOT NULL,
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, source_id, document_id),
+    FOREIGN KEY (tenant_id, source_id) REFERENCES sources(tenant_id, source_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS chat_sessions (
     tenant_id TEXT NOT NULL,
     session_id UUID NOT NULL,

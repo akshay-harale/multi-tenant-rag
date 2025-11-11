@@ -68,6 +68,11 @@ class QdrantVectorStore(VectorStore):
                     field_name="hash",
                     field_schema=qm.PayloadSchemaType.KEYWORD
                 )
+                self.client.create_payload_index(
+                    self._state.name,
+                    field_name="source_id",
+                    field_schema=qm.PayloadSchemaType.KEYWORD
+                )
             except Exception as e:
                 logger.warning("Failed creating payload index(es): %s", e)
         else:
@@ -172,6 +177,7 @@ class QdrantVectorStore(VectorStore):
         embedding: Sequence[float],
         top_k: int,
         score_threshold: Optional[float] = None,
+        source_ids: Optional[List[str]] = None,
     ) -> List[SearchResult]:
         # Ensure we know whether the collection exists (this allows searches after
         # process restarts when collection was created previously).
@@ -181,11 +187,36 @@ class QdrantVectorStore(VectorStore):
             # Nothing indexed yet
             return []
 
+        # Build filter conditions
+        must_conditions = [
+            qm.FieldCondition(
+                key="tenant_id",
+                match=qm.MatchValue(value=tenant_id)
+            )
+        ]
+        
+        # Add source filtering if provided
+        if source_ids:
+            should_conditions = [
+                qm.FieldCondition(
+                    key="source_id",
+                    match=qm.MatchValue(value=source_id)
+                )
+                for source_id in source_ids
+            ]
+            
+            query_filter = qm.Filter(
+                must=must_conditions,
+                should=should_conditions
+            )
+        else:
+            query_filter = qm.Filter(must=must_conditions)
+
         # Debug: log key search parameters to help diagnose missing-hit issues
         try:
             logger.debug(
-                "Qdrant search called: collection=%s, query_vector_len=%d, top_k=%d, score_threshold=%s, tenant_id=%s",
-                self._state.name, len(embedding) if embedding is not None else 0, top_k, score_threshold, tenant_id
+                "Qdrant search called: collection=%s, query_vector_len=%d, top_k=%d, score_threshold=%s, tenant_id=%s, source_ids=%s",
+                self._state.name, len(embedding) if embedding is not None else 0, top_k, score_threshold, tenant_id, source_ids
             )
             res = self.client.search(
                 collection_name=self._state.name,
@@ -194,14 +225,7 @@ class QdrantVectorStore(VectorStore):
                 with_payload=True,
                 with_vectors=False,
                 score_threshold=score_threshold,
-                query_filter=qm.Filter(
-                    must=[
-                        qm.FieldCondition(
-                            key="tenant_id",
-                            match=qm.MatchValue(value=tenant_id)
-                        )
-                    ]
-                )
+                query_filter=query_filter
             )
         except Exception as e:
             logger.error("Qdrant search error: %s", e)

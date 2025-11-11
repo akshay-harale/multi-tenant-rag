@@ -1,586 +1,132 @@
-<!--
-Simple Multi-Tenant RAG UI
-Features:
- - List / create tenants
- - Select tenant
- - Upload PDF / TXT -> embed
- - Chat with documents (persistent session)
- - Ad-hoc semantic search
-Backend endpoints used:
-  GET    /tenants
-  POST   /tenants                { tenant_id }
-  POST   /tenants/{t}/upload     multipart (file)
-  POST   /tenants/{t}/chat       { message, session_id?, top_k }
-  POST   /tenants/{t}/search     { query, top_k }
--->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Multi-Tenant RAG UI</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<style>
-:root {
-  --bg:#0f1115;
-  --panel:#1d222b;
-  --panel-alt:#262d38;
-  --accent:#3d7bff;
-  --accent-soft:#264b99;
-  --danger:#d9534f;
-  --ok:#37b26c;
-  --font: "Inter", system-ui, sans-serif;
-  --mono: "Roboto Mono", ui-monospace, monospace;
-}
-body {
-  margin:0;
-  background: var(--bg);
-  color:#e7ecf5;
-  font-family: var(--font);
-  -webkit-font-smoothing: antialiased;
-}
-h1 { font-size:1.4rem; margin:0 0 .75rem 0; }
-a { color: var(--accent); }
-button, input, select, textarea {
-  font-family: inherit;
-  font-size:.95rem;
-}
-#layout {
-  display:grid;
-  grid-template-columns: 320px 1fr;
-  gap:16px;
-  max-width:1600px;
-  margin:0 auto;
-  padding:18px 22px 34px;
-  box-sizing: border-box;
-}
-.panel {
-  background: var(--panel);
-  border:1px solid #2e3643;
-  border-radius:10px;
-  padding:14px 16px 18px;
-  box-shadow: 0 4px 10px -4px rgba(0,0,0,.6);
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-.panel h2 {
-  font-size:1.05rem;
-  font-weight:600;
-  margin:0 0 4px 0;
-  letter-spacing: .5px;
-  text-transform:uppercase;
-  color:#b0c2e3;
-}
-small.muted { color:#8893a4; font-size:.75rem; }
-hr.sep {
-  border:none;
-  border-top:1px solid #2e3643;
-  margin:4px 0 12px;
-}
-.inline {
-  display:flex;
-  gap:6px;
-  align-items:center;
-}
-.inline > * { flex:1; }
-input[type=text], input[type=file], select, textarea {
-  background: var(--panel-alt);
-  border:1px solid #353f4d;
-  border-radius:6px;
-  padding:8px 10px;
-  color:#d7deea;
-  outline:none;
-}
-input:focus, select:focus, textarea:focus {
-  border-color: var(--accent);
-  box-shadow:0 0 0 1px var(--accent-soft);
-}
-button {
-  cursor:pointer;
-  border:1px solid #415676;
-  background:linear-gradient(90deg,#345dbe,#2f79d9);
-  color:#fff;
-  padding:8px 14px;
-  border-radius:6px;
-  font-weight:500;
-  letter-spacing:.3px;
-  display:inline-flex;
-  gap:6px;
-  align-items:center;
-  justify-content:center;
-  transition:.15s ease;
-}
-button.secondary {
-  background:#343c47;
-  border:1px solid #495564;
-}
-button.danger {
-  background:#7e2020;
-  border-color:#a33636;
-}
-button:hover:not(:disabled) {
-  filter:brightness(1.08);
-}
-button:disabled {
-  opacity:.45;
-  cursor: not-allowed;
-}
-pre.log {
-  background: var(--panel-alt);
-  border:1px solid #333d49;
-  padding:10px 12px;
-  border-radius:6px;
-  font-family: var(--mono);
-  font-size:.74rem;
-  line-height:1.25rem;
-  max-height:190px;
-  overflow:auto;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
-#tenantList {
-  max-height:140px;
-  overflow:auto;
-  margin:0;
-  padding:0;
-  list-style:none;
-  font-size:.85rem;
-  line-height:1.35rem;
-}
-#tenantList li {
-  padding:3px 6px;
-  border-radius:4px;
-  cursor:pointer;
-  display:flex;
-  justify-content:space-between;
-  gap:6px;
-}
-#tenantList li.selected {
-  background: #2d3a4d;
-  color:#fff;
-}
-.badge {
-  background:#2c3950;
-  padding:2px 6px;
-  border-radius:12px;
-  font-size:.65rem;
-  letter-spacing:.5px;
-  text-transform:uppercase;
-  color:#93a8c5;
-  white-space:nowrap;
-}
-.flex { display:flex; gap:12px; }
-.col  { display:flex; flex-direction:column; gap:10px; }
-.grow { flex:1; }
-
-.chat-box {
-  background: var(--panel-alt);
-  border:1px solid #334252;
-  border-radius:8px;
-  padding:10px 12px;
-  height:380px;
-  overflow:auto;
-  font-size:.8rem;
-  line-height:1.3rem;
-  font-family: var(--mono);
-}
-.msg-user { color:#a4d4ff; }
-.msg-assistant { color:#d8ffe1; }
-.citations {
-  font-size:.65rem;
-  display:block;
-  color:#9fa8b4;
-  margin-top:4px;
-}
-
-/* Chat message containers for better spacing and readable blocks */
-.chat-box .msg-user,
-.chat-box .msg-assistant {
-  padding:8px;
-  margin-bottom:8px;
-  border-radius:6px;
-}
-
-/* Subtle backgrounds to separate roles */
-.chat-box .msg-user { background: rgba(64,120,200,0.06); }
-.chat-box .msg-assistant { background: rgba(60,120,80,0.04); }
-
-/* Code and pre styling inside messages */
-.chat-box pre {
-  background:#0b1220;
-  padding:10px;
-  border-radius:6px;
-  overflow:auto;
-  border:1px solid #23303b;
-  font-family: var(--mono);
-  font-size:.85rem;
-  line-height:1.25rem;
-}
-.chat-box code {
-  background:#071022;
-  padding:2px 6px;
-  border-radius:4px;
-  border:1px solid #23303b;
-  font-family: var(--mono);
-  font-size:.85rem;
-}
-
-/* Links inside rendered markdown */
-.chat-box a { color: var(--accent); text-decoration: underline; }
-
-.search-results {
-  font-size:.72rem;
-  line-height:1.1rem;
-  background:var(--panel-alt);
-  border:1px solid #394452;
-  border-radius:6px;
-  padding:8px;
-  max-height:210px;
-  overflow:auto;
-}
-
-footer {
-  text-align:center;
-  font-size:.65rem;
-  color:#607089;
-  margin-top:18px;
-}
-
-@media (max-width:1080px) {
-  #layout { grid-template-columns:1fr; }
-  .chat-box {height:300px;}
-}
-</style>
+  <meta charset="UTF-8" />
+  <title>Multi-Tenant RAG with Sources</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Multi-Tenant RAG Application with Source-Based Isolation" />
+  <link rel="stylesheet" href="/ui/styles.css" />
 </head>
 <body>
-<div id="layout">
-  <!-- LEFT COLUMN -->
-  <div class="panel" id="leftCol">
-    <h2>Tenants</h2>
-    <div class="inline">
-      <input id="newTenantId" type="text" placeholder="new_tenant_id" />
-      <button id="btnCreateTenant">Create</button>
-    </div>
-    <small class="muted">Click a tenant to select. Tenants persist in Postgres.</small>
-    <ul id="tenantList"></ul>
-    <div class="inline">
-      <button class="secondary" id="btnRefreshTenants">Refresh</button>
-      <span id="currentTenantBadge" class="badge" title="Active tenant">None</span>
+  <div id="app">
+    <!-- Breadcrumb Navigation -->
+    <div class="breadcrumb" id="breadcrumb"></div>
+
+    <!-- Page 1: Tenant Selection -->
+    <div class="page active" id="page-tenants">
+      <div class="card">
+        <h1>🏢 Tenant Management</h1>
+        <p style="color:#8893a4;margin-bottom:20px;">Select an existing tenant or create a new one to get started.</p>
+        
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label>Create New Tenant</label>
+            <input id="newTenantId" type="text" placeholder="e.g., acme_corp" />
+          </div>
+          <button id="btnCreateTenant" class="success">Create Tenant</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Available Tenants</h2>
+        <div id="tenantList" class="card-grid"></div>
+        <div id="tenantEmpty" class="empty-state" style="display:none;">
+          <div class="empty-state-icon">📁</div>
+          <div class="empty-state-title">No Tenants Found</div>
+          <p>Create your first tenant to get started</p>
+        </div>
+      </div>
     </div>
 
-    <hr class="sep" />
-    <h2>Upload & Embed</h2>
-    <input id="fileInput" type="file" accept=".pdf,.txt" />
-    <div class="inline">
-      <button id="btnUpload">Upload & Embed</button>
-      <input type="number" id="topKUploadDummy" value="6" style="display:none;" />
-    </div>
-    <pre id="ingestLog" class="log" style="height:110px;">Ready.</pre>
+    <!-- Page 2: Source Management -->
+    <div class="page" id="page-sources">
+      <div class="card">
+        <h1>📂 Source Management</h1>
+        <p style="color:#8893a4;margin-bottom:20px;">
+          Tenant: <span class="badge primary" id="currentTenantDisplay"></span>
+        </p>
+        
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label>Create New Source</label>
+            <input id="newSourceName" type="text" placeholder="e.g., product-docs, legal-contracts" />
+          </div>
+          <button id="btnCreateSource" class="success">Create Source</button>
+        </div>
+      </div>
 
-    <hr class="sep" />
-    <h2>Semantic Search</h2>
-    <div class="inline">
-      <input id="searchQuery" type="text" placeholder="invoice total..." />
-      <button id="btnSearch" class="secondary">Search</button>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h2 style="margin:0;">Your Sources</h2>
+          <button id="btnProceedWithoutSource" class="secondary small">Skip (Use All Sources)</button>
+        </div>
+        <div id="sourceList" class="card-grid"></div>
+        <div id="sourceEmpty" class="empty-state" style="display:none;">
+          <div class="empty-state-icon">📦</div>
+          <div class="empty-state-title">No Sources Yet</div>
+          <p>Create a source to organize your documents, or skip to use all documents</p>
+        </div>
+      </div>
     </div>
-    <div id="searchResults" class="search-results"></div>
+
+    <!-- Page 3: Document Upload & Chat -->
+    <div class="page" id="page-chat">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <h1>💬 Chat & Document Management</h1>
+            <p style="color:#8893a4;margin:8px 0 0 0;">
+              Tenant: <span class="badge primary" id="chatTenantDisplay"></span> &nbsp;
+              Source: <span class="badge" id="chatSourceDisplay"></span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📤 Upload Documents</h3>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <input id="fileInput" type="file" accept=".pdf,.txt" />
+          </div>
+          <button id="btnUpload">Upload & Embed</button>
+        </div>
+        <div class="status-log" id="uploadLog">Ready to upload documents...</div>
+      </div>
+
+      <div class="card">
+        <h3>💬 Chat with Documents</h3>
+        <div class="chat-container">
+          <div class="source-selector">
+            <h3 style="margin-top:0;">Filter by Sources</h3>
+            <div id="sourceFilterList" class="source-list"></div>
+          </div>
+          <div class="chat-main">
+            <div class="chat-box" id="chatBox">
+              <div style="text-align:center;color:#8893a4;padding:40px 20px;">
+                Start a conversation by typing a message below
+              </div>
+            </div>
+            <div class="chat-input-area">
+              <textarea id="chatInput" placeholder="Ask a question about your documents..." rows="3"></textarea>
+              <button id="btnSend">Send</button>
+            </div>
+            <div class="chat-controls">
+              <select id="chatTopK">
+                <option value="4">Top 4 chunks</option>
+                <option value="6" selected>Top 6 chunks</option>
+                <option value="8">Top 8 chunks</option>
+                <option value="10">Top 10 chunks</option>
+              </select>
+              <button id="btnNewSession" class="secondary small">New Session</button>
+              <button id="btnClearChat" class="danger small">Clear Display</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- RIGHT COLUMN -->
-  <div class="panel" id="rightCol">
-    <h2>Chat With Documents</h2>
-    <div class="inline">
-      <textarea id="chatInput" rows="3" placeholder="Ask something about your documents... (Shift+Enter for newline)"></textarea>
-      <button id="btnSend">Send</button>
-    </div>
-    <div class="inline">
-      <input id="sessionId" type="text" placeholder="(auto) session id" />
-      <select id="chatTopK">
-        <option value="4">TopK 4</option>
-        <option value="6" selected>TopK 6</option>
-        <option value="8">TopK 8</option>
-        <option value="10">TopK 10</option>
-      </select>
-      <button id="btnNewSession" class="secondary">New Session</button>
-      <button id="btnClearChat" class="danger">Clear</button>
-    </div>
-    <div id="chatBox" class="chat-box"></div>
-    <pre id="statusLog" class="log">Status: Ready.</pre>
-    <footer>
-      Multi-Tenant RAG Demo UI &mdash; Backend FastAPI + Qdrant + Postgres + Ollama (external).
-    </footer>
-  </div>
-</div>
-
-<script>
-const apiBase = ""; // same origin
-let currentTenant = null;
-let chatHistory = []; // local display copy
-
-function logIngest(msg){
-  const el = document.getElementById("ingestLog");
-  el.textContent = (el.textContent + "\n" + msg).trim().slice(-4000);
-  el.scrollTop = el.scrollHeight;
-}
-function logStatus(msg){
-  const el = document.getElementById("statusLog");
-  el.textContent = (el.textContent + "\n" + msg).trim().slice(-6000);
-  el.scrollTop = el.scrollHeight;
-}
-function chatAppend(role, content, citations=[]) {
-  const box = document.getElementById("chatBox");
-  const div = document.createElement("div");
-  div.className = role === "user" ? "msg-user" : "msg-assistant";
-
-  function escapeHtml(str){
-    return String(str)
-      .replace(/&/g,'&')
-      .replace(/</g,'<')
-      .replace(/>/g,'>')
-      .replace(/"/g,'"')
-      .replace(/'/g,'&#39;');
-  }
-
-  function renderMarkdown(text){
-    if(!text) return "";
-    // start with escaped text to avoid XSS
-    let s = escapeHtml(text);
-
-    // code blocks ```...```
-    s = s.replace(/```([\s\S]*?)```/g, (m, code) => {
-      return '<pre><code>' + escapeHtml(code) + '</code></pre>';
-    });
-
-    // inline code `...`
-    s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
-
-    // links [text](url)
-    s = s.replace(/\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-
-    // bold **text**
-    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-    // italic *text*
-    s = s.replace(/(^|[^*])\*([^*][^*]*?)\*([^*]|$)/g, (m, pre, txt, post) => {
-      return pre + '<em>' + txt + '</em>' + post;
-    });
-
-    // simple unordered lists: lines beginning with - or *
-    const lines = s.split('\n');
-    let out = '';
-    let inList = false;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const m = line.match(/^\s*[-*]\s+(.*)$/);
-      if (m) {
-        if (!inList) { out += '<ul>'; inList = true; }
-        out += '<li>' + m[1] + '</li>';
-      } else {
-        if (inList) { out += '</ul>'; inList = false; }
-        out += line.replace(/\n/g, '<br>');
-      }
-      if (i < lines.length - 1) out += '\n';
-    }
-    if (inList) out += '</ul>';
-
-    // paragraphs: split on double newlines
-    const parts = out.split(/\n{2,}/).map(p => '<p>' + p.replace(/\n/g, '<br>') + '</p>');
-    return parts.join('');
-  }
-
-  div.innerHTML = "<strong>"+role.toUpperCase()+":</strong> " + renderMarkdown(content);
-
-  if (citations.length){
-    const cite = document.createElement("span");
-    cite.className = "citations";
-    cite.textContent = "Citations: " + citations.join(", ");
-    div.appendChild(cite);
-  }
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
-}
-
-async function fetchJSON(url, options={}){
-  const res = await fetch(url, Object.assign({
-    headers:{ "Content-Type":"application/json" }
-  }, options));
-  if(!res.ok){
-    let txt = await res.text();
-    throw new Error("HTTP " + res.status + ": " + txt);
-  }
-  return res.json();
-}
-
-async function listTenants(){
-  try {
-    const data = await fetchJSON(apiBase + "/tenants");
-    const ul = document.getElementById("tenantList");
-    ul.innerHTML = "";
-    data.tenants.forEach(t => {
-      const li = document.createElement("li");
-      li.textContent = t;
-      li.onclick = () => selectTenant(t);
-      if(t === currentTenant) li.classList.add("selected");
-      ul.appendChild(li);
-    });
-  } catch(e){
-    logStatus("List tenants error: " + e.message);
-  }
-}
-
-function selectTenant(t){
-  currentTenant = t;
-  document.getElementById("currentTenantBadge").textContent = t;
-  [...document.querySelectorAll("#tenantList li")].forEach(li=>{
-    li.classList.toggle("selected", li.textContent === t);
-  });
-  logStatus("Selected tenant: " + t);
-}
-
-async function createTenant(){
-  const id = document.getElementById("newTenantId").value.trim();
-  if(!id){ return; }
-  try {
-    await fetchJSON(apiBase + "/tenants", {
-      method:"POST",
-      body: JSON.stringify({ tenant_id: id })
-    });
-    logStatus("Created tenant " + id);
-    await listTenants();
-    selectTenant(id);
-  } catch(e){
-    logStatus("Create tenant failed: " + e.message);
-  }
-}
-
-async function uploadAndEmbed(){
-  if(!currentTenant){
-    logIngest("Select tenant first.");
-    return;
-  }
-  const fileInput = document.getElementById("fileInput");
-  if(!fileInput.files || !fileInput.files.length){
-    logIngest("Choose a PDF or TXT file.");
-    return;
-  }
-  const file = fileInput.files[0];
-  const formData = new FormData();
-  formData.append("file", file);
-
-  logIngest("Uploading " + file.name + " ...");
-  try {
-    const res = await fetch(apiBase + `/tenants/${encodeURIComponent(currentTenant)}/upload`, {
-      method: "POST",
-      body: formData
-    });
-    if(!res.ok){
-      const tx = await res.text();
-      throw new Error(tx);
-    }
-    const data = await res.json();
-    logIngest("Embedded: new_chunks=" + data.new_chunks + " skipped=" + data.skipped_duplicates);
-  } catch(e){
-    logIngest("Upload error: " + e.message);
-  }
-}
-
-async function searchDocs(){
-  if(!currentTenant){
-    document.getElementById("searchResults").textContent = "Select tenant first.";
-    return;
-  }
-  const q = document.getElementById("searchQuery").value.trim();
-  if(!q){
-    return;
-  }
-  document.getElementById("searchResults").textContent = "Searching...";
-  try {
-    const data = await fetchJSON(apiBase + `/tenants/${encodeURIComponent(currentTenant)}/search`, {
-      method:"POST",
-      body: JSON.stringify({ query: q, top_k: 6 })
-    });
-    if(!data.hits.length){
-      document.getElementById("searchResults").textContent = "No hits.";
-      return;
-    }
-    const lines = data.hits.map(h =>
-      `[${h.score.toFixed(4)}] ${h.source || "?"}#${h.chunk_index}: ${h.text.slice(0,160).replace(/\s+/g,' ')}`
-    );
-    document.getElementById("searchResults").textContent = lines.join("\n");
-  } catch(e){
-    document.getElementById("searchResults").textContent = "Error: " + e.message;
-  }
-}
-
-function newSession(){
-  document.getElementById("sessionId").value = "";
-  chatHistory = [];
-  document.getElementById("chatBox").innerHTML = "";
-  logStatus("New chat session (ID will be assigned on first message).");
-}
-
-function clearChat(){
-  chatHistory = [];
-  document.getElementById("chatBox").innerHTML = "";
-  logStatus("Cleared chat display (session not deleted from DB).");
-}
-
-async function sendChat(){
-  if(!currentTenant){
-    logStatus("Select tenant first.");
-    return;
-  }
-  const input = document.getElementById("chatInput");
-  const message = input.value.trim();
-  if(!message) return;
-  const topK = parseInt(document.getElementById("chatTopK").value, 10) || 6;
-  const sessionIdInput = document.getElementById("sessionId");
-  const sessionId = sessionIdInput.value.trim() || undefined;
-
-  chatAppend("user", message);
-  input.value = "";
-  logStatus("Sending chat...");
-
-  try {
-    const data = await fetchJSON(apiBase + `/tenants/${encodeURIComponent(currentTenant)}/chat`, {
-      method:"POST",
-      body: JSON.stringify({
-        message,
-        session_id: sessionId,
-        top_k: topK,
-        include_history: true
-      })
-    });
-    if(!sessionIdInput.value){
-      sessionIdInput.value = data.session_id;
-      logStatus("Assigned session: " + data.session_id);
-    }
-    chatAppend("assistant", data.answer, data.citations || []);
-    logStatus(`Answer received. used_chunks=${data.used_chunks} sources=${(data.sources||[]).join(",")}`);
-  } catch(e){
-    chatAppend("assistant", "ERROR: " + e.message);
-    logStatus("Chat error: " + e.message);
-  }
-}
-
-/* Event bindings */
-document.getElementById("btnCreateTenant").onclick = createTenant;
-document.getElementById("btnRefreshTenants").onclick = listTenants;
-document.getElementById("btnUpload").onclick = uploadAndEmbed;
-document.getElementById("btnSearch").onclick = searchDocs;
-document.getElementById("btnSend").onclick = sendChat;
-document.getElementById("btnClearChat").onclick = clearChat;
-document.getElementById("btnNewSession").onclick = newSession;
-document.getElementById("chatInput").addEventListener("keydown", e=>{
-  if(e.key === "Enter" && !e.shiftKey){
-    e.preventDefault();
-    sendChat();
-  }
-});
-
-/* Initial load */
-listTenants();
-logStatus("UI initialized.");
-</script>
+  <script src="/ui/app.js"></script>
 </body>
 </html>

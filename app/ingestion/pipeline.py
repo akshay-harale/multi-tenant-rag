@@ -78,7 +78,7 @@ def _iter_pdf_files(root_dir: str) -> Iterable[str]:
 
 # ---------------- Main Pipeline ----------------
 
-def ingest_directory(tenant: TenantContext, directory: str) -> IngestionStats:
+def ingest_directory(tenant: TenantContext, directory: str, source_id: str | None = None) -> IngestionStats:
     """
     Ingest all PDF files in a directory into vector store.
     """
@@ -107,19 +107,23 @@ def ingest_directory(tenant: TenantContext, directory: str) -> IngestionStats:
         hashes.append(h)
         # Deterministic UUID v5 based on content hash + page + chunk index for idempotency (Qdrant requires int or UUID)
         doc_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{h}:{page}:{cidx}"))
+        metadata = {
+            "text": text,
+            "source": os.path.basename(source),
+            "source_path": source,
+            "page": page,
+            "chunk_index": cidx,
+            "hash": h,
+            "created_at": int(time.time())
+        }
+        # Add source_id if provided
+        if source_id:
+            metadata["source_id"] = source_id
         docs.append(
             VectorDocument(
                 id=doc_id,
                 text=text,
-                metadata={
-                    "text": text,
-                    "source": os.path.basename(source),
-                    "source_path": source,
-                    "page": page,
-                    "chunk_index": cidx,
-                    "hash": h,
-                    "created_at": int(time.time())
-                }
+                metadata=metadata
             )
         )
 
@@ -159,6 +163,6 @@ def ingest_directory(tenant: TenantContext, directory: str) -> IngestionStats:
     )
     return stats
 
-def ingest_single_file(tenant: TenantContext, file_path: str) -> IngestionStats:
+def ingest_single_file(tenant: TenantContext, file_path: str, source_id: str | None = None) -> IngestionStats:
     tmp_dir = os.path.dirname(file_path)
-    return ingest_directory(tenant, tmp_dir)
+    return ingest_directory(tenant, tmp_dir, source_id)
